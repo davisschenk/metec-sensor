@@ -1,0 +1,28 @@
+[package]
+name = "metec-sensor"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1.0.80"
+bytes = "1.5.0"
+chrono = { version = "0.4.35", features = ["serde"] }
+clap = { version = "4.5.2", features = ["derive", "env"] }
+crc-any = "2.4.4"
+csv = "1.3.0"
+csv-async = { version = "1.3.0", features = ["tokio"] }
+dotenv = "0.15.0"
+futures = "0.3.30"
+futures-util = "0.3.30"
+log = "0.4.21"
+mavlink = "0.12.2"
+pretty_env_logger = "0.5.0"
+serde = { version = "1.0.197", features = ["derive"] }
+sysinfo = "0.30.7"
+thiserror = "1.0.57"
+tokio = { version = "1.36.0", features = ["full"] }
+tokio-serial = { version = "5.4.4", features = ["codec"] }
+tokio-stream = "0.1.14"
+tokio-util = { version = "0.7.10", features = ["codec"] }
