@@ -60,7 +60,8 @@ This program is configured through the command line and environment variables, t
 
 ### Options
 
-SENSOR_x_PORT: Port for sensor A, I recommend setting this by-id
+SENSOR_x_ENABLE: Should we look for this sensor
+SENSOR_x_PORT: Port for sensor A/B, I recommend setting this by-id
 SENSOR_x_BAUD: Baud rate for the sensor, should be 9600
 
 MAVLINK_PORT: The port to use for mavlink, this should correspond to serial0. NOTE: this can change from pi to pi so make sure it is set correctly.
