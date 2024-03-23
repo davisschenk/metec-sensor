@@ -31,19 +31,23 @@ struct Args {
     #[arg(long, env)]
     sensor_b_baud: u32,
 
-    /// Mavlink connection string: https://docs.rs/mavlink/latest/mavlink/fn.connect.html
+    /// Serial Port for Mavlink
     #[arg(long, env)]
     mavlink_port: PathBuf,
 
+    /// Baud Rate for Mavlink
     #[arg(long, env)]
     mavlink_baud: u32,
 
+    /// System ID for Mavlink
     #[arg(long, env)]
     mavlink_system_id: u8,
 
+    /// Component ID for Mavlink
     #[arg(long, env)]
     mavlink_component_id: u8,
 
+    /// Directory for storing log files
     #[arg(long, env)]
     output_directory: PathBuf,
 }
@@ -75,19 +79,26 @@ async fn main() -> Result<()> {
         args.mavlink_component_id,
     )?;
 
-    log::info!("Opening Serial Port A");
+    log::info!("Creating output directory at {:?}", args.output_directory);
+    tokio::fs::create_dir_all(&args.output_directory).await?;
+
+    log::info!("Opening Serial Port A: {:?}:{}", args.sensor_a_port, args.sensor_a_baud);
     let sensor_a_serial = tokio_serial::new(args.sensor_a_port.to_str().unwrap(), args.sensor_a_baud).open_native_async()?;
     let mut sensor_a_stream = sensor_data_framed_reader(sensor_a_serial);
-    let mut sensor_a_log = AsyncSerializer::from_writer(File::create(args.get_output_file("sensor_a")).await?);
 
-    log::info!("Opening Serial Port B");
-    let sensor_b_serial = tokio_serial::new(args.sensor_b_port.to_str().unwrap(), args.sensor_b_baud).open_native_async()?;
-    let mut sensor_b_stream = sensor_data_framed_reader(sensor_b_serial);
-    let mut sensor_b_log = AsyncSerializer::from_writer(File::create(args.get_output_file("sensor_b")).await?);
+    let filename_a = args.get_output_file("sensor_a");
+    log::info!("Writing log at {:?}", filename_a);
+    let mut sensor_a_log = AsyncSerializer::from_writer(File::create(filename_a).await?);
 
-    let _boot_time = tokio::time::Instant::now();
+    // log::info!("Opening Serial Port B: {}:{}", args.sensor_b_port, args.sensor_b_baud);
+    // let sensor_b_serial = tokio_serial::new(args.sensor_b_port.to_str().unwrap(), args.sensor_b_baud).open_native_async()?;
+    // let mut sensor_b_stream = sensor_data_framed_reader(sensor_b_serial);
+    // let mut sensor_b_log = AsyncSerializer::from_writer(File::create(args.get_output_file("sensor_b")).await?);
+
+    let boot_time = tokio::time::Instant::now();
     let mut heartbeat_stream = heartbeat_stream(&telem, Duration::from_secs(1));
     let mut current_position: Option<DroneLocation> = None;
+    let mut counter = 0f32;
 
     log::info!("Starting main loop");
     loop {
@@ -95,6 +106,7 @@ async fn main() -> Result<()> {
             Some(heartbeat_message) = heartbeat_stream.next() => {
                 log::trace!("Sending heartbeat");
                 telem.send(heartbeat_message).await?;
+                counter = counter + 1.0;
             },
             Some(Ok((_header, message))) = telem.recv() => {
                 match message {
@@ -106,15 +118,17 @@ async fn main() -> Result<()> {
                             log::debug!("Current position: {} {} {}", loc.longitude, loc.latitude, loc.altitude);
                         }
                     },
-                    _ => ()
+                    msg @ _ => log::trace!("Recv: {msg:?}")
                 }
             },
             Some(sensor_result) = sensor_a_stream.next() => {
-                handle_sensor_data(&mut telem, &mut sensor_a_log, &current_position, sensor_result).await?;
+                handle_sensor_data(&mut telem, &mut sensor_a_log, &current_position, sensor_result, boot_time).await?;
             },
-            Some(sensor_result) = sensor_b_stream.next() => {
-                handle_sensor_data(&mut telem, &mut sensor_b_log, &current_position, sensor_result).await?;
-            }
+            // Some(sensor_result) = sensor_b_stream.next() => {
+            //     handle_sensor_data(&mut telem, &mut sensor_b_log, &current_position, sensor_result).await?;
+            // }
         }
+
+        tokio::time::sleep(Duration::from_millis(1)).await;
     }
 }
