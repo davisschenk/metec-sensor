@@ -38,10 +38,12 @@ Once mirroring is setup, the next step is to connect mavproxy to our mirrored li
 ## Graphing Values from Mavproxy
 Once mavproxy has been connected, the next step is to graph the values. This is done using mavproxy.
 
+Values are postfixed with an A/B based on which sensor it was received from
+
 [Mavproxy Graphing](https://ardupilot.org/mavproxy/docs/modules/graph.html)
 
 1. `module load graph`
-2. `graph NAMED_VALUE_FLOAT[CH4].value NAMED_VALUE_FLOAT[C2H6].value`
+2. `graph NAMED_VALUE_FLOAT[CH4A].value NAMED_VALUE_FLOAT[C2H6A].value`
 
 
 # Other Notes
@@ -53,7 +55,9 @@ ssh metec@metec-pi.local
 ```
 
 ## Build Script
-This repo contains `build.sh` which is a script that builds and transfers the binary to a pi
+This repo contains `build.sh` which is a script that builds and transfers the binary to a pi.
+
+`rustup target add aarch64-unknown-linux-gnu`
 
 ## Program Configuration
 This program is configured through the command line and environment variables, the options can be changed both when running the program or through a .env file.
