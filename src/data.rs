@@ -1,12 +1,12 @@
 use crate::{error::*, mavlink::Telem};
-use csv_async::{AsyncWriter, AsyncSerializer};
+use csv_async::AsyncSerializer;
 use futures::Stream;
 use futures_util::StreamExt;
-use tokio::time::Instant;
-
 use mavlink::common::GLOBAL_POSITION_INT_DATA;
 use serde::{Deserialize, Serialize};
-use tokio::{fs::File, io::AsyncRead, pin};
+use tokio::time::Instant;
+use tokio::{fs::File, io::AsyncRead};
+use tokio_serial::SerialPortBuilderExt;
 use tokio_util::codec::{FramedRead, LinesCodec};
 
 // 03/20/2024 12:14:34.580
@@ -28,55 +28,55 @@ use tokio_util::codec::{FramedRead, LinesCodec};
 // -105.1388320923
 #[derive(Serialize, Deserialize, Default, Debug)]
 pub struct SensorData {
-    #[serde(rename="Time Stamp")]
+    #[serde(rename = "Time Stamp")]
     pub time_stamp: String,
 
-    #[serde(rename="Inlet Number")]
+    #[serde(rename = "Inlet Number")]
     pub inlet_number: u32,
 
-    #[serde(rename="P (mbars)")]
+    #[serde(rename = "P (mbars)")]
     pub p: f32,
 
-    #[serde(rename="T0 (degC)")]
+    #[serde(rename = "T0 (degC)")]
     pub t0: f32,
 
-    #[serde(rename="T5 (degC)")]
+    #[serde(rename = "T5 (degC)")]
     pub t5: f32,
 
-    #[serde(rename="Tgas(degC)")]
+    #[serde(rename = "Tgas(degC)")]
     pub t_gas: f32,
 
-    #[serde(rename="CH4 (ppm)")]
+    #[serde(rename = "CH4 (ppm)")]
     pub ch4: f32,
 
-    #[serde(rename="H2O (ppm)")]
+    #[serde(rename = "H2O (ppm)")]
     pub h2o: f32,
 
-    #[serde(rename="C2H6 (ppb)")]
+    #[serde(rename = "C2H6 (ppb)")]
     pub c2h6: f32,
 
-    #[serde(rename="R")]
+    #[serde(rename = "R")]
     pub r: f32,
 
-    #[serde(rename="C2/C1")]
+    #[serde(rename = "C2/C1")]
     pub c2_c1: f32,
 
-    #[serde(rename="Battery Charge (V)")]
+    #[serde(rename = "Battery Charge (V)")]
     pub battery: i32,
 
-    #[serde(rename="Power Input (mV)")]
+    #[serde(rename = "Power Input (mV)")]
     pub power_input: i32,
 
-    #[serde(rename="Current (mA)")]
+    #[serde(rename = "Current (mA)")]
     pub current: i32,
 
-    #[serde(rename="SOC (%)")]
+    #[serde(rename = "SOC (%)")]
     pub soc: i32,
 
-    #[serde(rename="Latitude")]
+    #[serde(rename = "Latitude")]
     pub lat: f64,
 
-    #[serde(rename="Longitude")]
+    #[serde(rename = "Longitude")]
     pub lon: f64,
 
     #[serde(skip_deserializing)]
@@ -124,7 +124,7 @@ pub fn sensor_data_framed_reader<T: AsyncRead>(
 
         if let Some(result) = dsr.next().await {
             match result {
-               Ok(d) => Ok(Some(d)),
+                Ok(d) => Ok(Some(d)),
                 Err(e) => {
                     log::error!("Sensor Error: {e:?}");
                     Ok(None)
@@ -135,8 +135,17 @@ pub fn sensor_data_framed_reader<T: AsyncRead>(
         }
     });
 
-
     Box::pin(stream)
+}
+
+pub fn open_serial_port(
+    port: &str,
+    baud: u32,
+) -> Result<impl Stream<Item = Result<Option<SensorData>>>> {
+    let serial = tokio_serial::new(port, baud).open_native_async()?;
+    let data = sensor_data_framed_reader(serial);
+
+    Ok(data)
 }
 
 pub async fn handle_sensor_data(
@@ -145,6 +154,7 @@ pub async fn handle_sensor_data(
     current_position: &Option<DroneLocation>,
     sensor_result: Result<Option<SensorData>>,
     boot_time: Instant,
+    sensor_name: &str
 ) -> Result<()> {
     let mut sensor: SensorData = if let Ok(sensor_option) = sensor_result {
         if let Some(sensor) = sensor_option {
@@ -158,7 +168,6 @@ pub async fn handle_sensor_data(
         return Ok(());
     };
 
-
     if let Some(location) = current_position {
         sensor.drone_lat = Some(location.latitude);
         sensor.drone_lon = Some(location.longitude);
@@ -167,8 +176,8 @@ pub async fn handle_sensor_data(
 
     log::debug!("Sensor Data: {sensor:?}");
 
-    mavlink.send_float("CH4", sensor.ch4, boot_time).await?;
-    mavlink.send_float("C2H6", sensor.c2h6, boot_time).await?;
+    mavlink.send_float(&format!("CH4{sensor_name}"), sensor.ch4, boot_time).await?;
+    mavlink.send_float(&format!("C2H6{sensor_name}"), sensor.c2h6, boot_time).await?;
 
     csv.serialize(sensor).await?;
     csv.flush().await?;
