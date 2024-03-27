@@ -1,9 +1,10 @@
 use crate::{error::*, mavlink::Telem};
 use csv_async::AsyncSerializer;
 use futures::Stream;
-use futures_util::StreamExt;
+use futures_util::{StreamExt};
 use mavlink::common::GLOBAL_POSITION_INT_DATA;
 use serde::{Deserialize, Serialize};
+use tokio::io::AsyncWriteExt;
 use tokio::time::Instant;
 use tokio::{fs::File, io::AsyncRead};
 use tokio_serial::SerialPortBuilderExt;
@@ -154,7 +155,8 @@ pub async fn handle_sensor_data(
     current_position: &Option<DroneLocation>,
     sensor_result: Result<Option<SensorData>>,
     boot_time: Instant,
-    sensor_name: &str
+    sensor_name: &str,
+    lora: &mut Option<impl AsyncWriteExt + Unpin>
 ) -> Result<()> {
     let mut sensor: SensorData = if let Ok(Some(sensor)) = sensor_result {
         sensor
@@ -167,6 +169,17 @@ pub async fn handle_sensor_data(
         sensor.drone_lat = Some(location.latitude);
         sensor.drone_lon = Some(location.longitude);
         sensor.drone_alt = Some(location.altitude);
+    }
+
+    if let Some(ref mut lora) = lora {
+        let mut writer = csv_async::AsyncWriterBuilder::new()
+            .has_headers(false)
+            .create_serializer(vec![]);
+
+        writer.serialize(&sensor).await?;
+
+        let data = String::from_utf8(writer.into_inner().await.unwrap()).unwrap();
+        lora.write(format!("{sensor_name},{}", data).as_bytes()).await?;
     }
 
     log::debug!("Sensor Data: {sensor:?}");

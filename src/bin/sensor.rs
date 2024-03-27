@@ -6,6 +6,7 @@ use mavlink::common::MavMessage;
 use metec_sensor::data::{handle_sensor_data, open_serial_port, DroneLocation};
 use metec_sensor::error::*;
 use metec_sensor::mavlink::{heartbeat_stream, Telem};
+use tokio_serial::SerialPortBuilderExt;
 use std::path::PathBuf;
 use std::time::Duration;
 use tokio::fs::File;
@@ -55,6 +56,16 @@ struct Args {
     /// Directory for storing log files
     #[arg(long, env)]
     output_directory: PathBuf,
+
+    #[arg(long, env)]
+    lora_radio_enable: bool,
+
+    #[arg(long, env)]
+    lora_radio_port: String,
+
+    #[arg(long, env)]
+    lora_radio_baud: u32,
+
 }
 
 impl Args {
@@ -113,6 +124,12 @@ async fn main() -> Result<()> {
         (None, None)
     };
 
+    let mut lora_radio = if args.lora_radio_enable {
+        Some(tokio_serial::new(args.lora_radio_port, args.lora_radio_baud).open_native_async()?)
+    } else {
+       None
+    };
+
     let boot_time = tokio::time::Instant::now();
     let mut heartbeat_stream = heartbeat_stream(&telem, Duration::from_secs(1));
     let mut current_position: Option<DroneLocation> = None;
@@ -155,7 +172,8 @@ async fn main() -> Result<()> {
                     &current_position,
                     sensor_result,
                     boot_time,
-                    "A"
+                    "A",
+                    &mut lora_radio
                 )
                 .await?;
             }
@@ -171,7 +189,8 @@ async fn main() -> Result<()> {
                     &current_position,
                     sensor_result,
                     boot_time,
-                    "B"
+                    "B",
+                    &mut lora_radio
                 )
                 .await?;
             }
