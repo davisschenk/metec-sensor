@@ -30,7 +30,7 @@ With the drone powered up the next step is setting up mission planner and mavpro
 
 Before connecting the drone, we need to setup mavlink mirroring so that mavproxy can see our companion computer, instructions can be found [here](https://ardupilot.org/planner/docs/common-mp-tools.html#mavlink).
 
-<!--TODO: Insert image here-->
+![Mission Planner Config](./assets/mission_planner_config.jpg)
 
 Once mirroring is setup, the next step is to connect mavproxy to our mirrored link. This can be done by launching `mavproxy` from the command line, and then clicking link > add and then setting the connection type to TCP and clicking add link. After doing this we should be able to see console output from the drone as well as values from the telemetry.
 
