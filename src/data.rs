@@ -179,7 +179,7 @@ pub async fn handle_sensor_data(
         writer.serialize(&sensor).await?;
 
         let data = String::from_utf8(writer.into_inner().await.unwrap()).unwrap();
-        lora.write(format!("{sensor_name},{}", data).as_bytes()).await?;
+        lora.write_all(format!("{sensor_name},{}", data).as_bytes()).await?;
     }
 
     log::debug!("Sensor Data: {sensor:?}");
