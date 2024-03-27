@@ -113,8 +113,8 @@ impl From<GLOBAL_POSITION_INT_DATA> for DroneLocation {
 pub fn sensor_data_framed_reader<T: AsyncRead>(
     reader: T,
 ) -> impl Stream<Item = Result<Option<SensorData>>> {
-    let stream = FramedRead::new(reader, LinesCodec::default()).then(|data| async {
-        let data = data?;
+    let stream = FramedRead::new(reader, LinesCodec::default()).then(|line| async {
+        let data = line?;
 
         let mut reader = csv_async::AsyncReaderBuilder::new()
             .has_headers(false)
@@ -156,15 +156,10 @@ pub async fn handle_sensor_data(
     boot_time: Instant,
     sensor_name: &str
 ) -> Result<()> {
-    let mut sensor: SensorData = if let Ok(sensor_option) = sensor_result {
-        if let Some(sensor) = sensor_option {
-            sensor
-        } else {
-            log::trace!("None sensor");
-            return Ok(());
-        }
+    let mut sensor: SensorData = if let Ok(Some(sensor)) = sensor_result {
+        sensor
     } else {
-        log::trace!("Err sensor");
+        log::trace!("Did not receieve sensor data: {sensor_result:?}");
         return Ok(());
     };
 

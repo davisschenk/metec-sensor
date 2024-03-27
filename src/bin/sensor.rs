@@ -128,20 +128,20 @@ async fn main() -> Result<()> {
         // Check if we have receieved any mavlink messages
         if let Some(Ok((_header, message))) = telem.recv().await {
             match message {
+                // Ignore heartbeat messages, we dont care about any other devices
                 MavMessage::HEARTBEAT(_) => (),
+
+                MavMessage::NAMED_VALUE_FLOAT(_) => (),
+
+                // Grab global position
                 MavMessage::GLOBAL_POSITION_INT(location) => {
                     current_position = Some(DroneLocation::from(location));
 
                     if let Some(loc) = current_position {
-                        log::debug!(
-                            "Current position: {} {} {}",
-                            loc.longitude,
-                            loc.latitude,
-                            loc.altitude
-                        );
-                    }
+                        log::debug!("Current position: {loc:?}");
+                    };
                 }
-                msg => log::trace!("Recv: {msg:?}"),
+                msg => log::trace!("Mavlink Received: {msg:?}"),
             }
         };
 
