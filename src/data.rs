@@ -1,22 +1,26 @@
+use crate::error::*;
 use crate::mavlink::named_float_message;
-use crate::{error::*, mavlink::Telem};
-use csv_async::AsyncSerializer;
+
 use futures::Stream;
-use futures_util::{StreamExt, Future};
-use mavlink::common::{GLOBAL_POSITION_INT_DATA, MavMessage};
+use futures_util::{Future, StreamExt};
+use mavlink::common::{MavMessage, GLOBAL_POSITION_INT_DATA};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-use tokio::io::AsyncWriteExt;
+
+use tokio::io::AsyncRead;
 use tokio::sync::mpsc::Sender;
 use tokio::time::Instant;
-use tokio::{fs::File, io::AsyncRead};
 use tokio_serial::SerialPortBuilderExt;
 use tokio_util::codec::{FramedRead, LinesCodec, LinesCodecError};
 
-
 pub trait SensorData: Send {
     fn set_location(&mut self, location: DroneLocation);
-    fn send_mavlink(&self, sensor_name: &str, boot_time: Instant, mavlink: &Sender<MavMessage>) -> impl Future<Output = Result<()>> + Send;
+    fn send_mavlink(
+        &self,
+        sensor_name: &str,
+        boot_time: Instant,
+        mavlink: &Sender<MavMessage>,
+    ) -> impl Future<Output = Result<()>> + Send;
 }
 
 #[derive(Serialize, Deserialize, Default, Debug)]
@@ -89,9 +93,26 @@ impl SensorData for CH4SensorData {
         self.drone_alt = Some(location.altitude);
     }
 
-    async fn send_mavlink(&self, sensor_name: &str, boot_time: Instant, mavlink: &Sender<MavMessage>) -> Result<()> {
-        mavlink.send(named_float_message(&format!("{sensor_name}CH4"), self.ch4, boot_time)).await?;
-        mavlink.send(named_float_message(&format!("{sensor_name}C2H6"), self.c2h6, boot_time)).await?;
+    async fn send_mavlink(
+        &self,
+        sensor_name: &str,
+        boot_time: Instant,
+        mavlink: &Sender<MavMessage>,
+    ) -> Result<()> {
+        mavlink
+            .send(named_float_message(
+                &format!("{sensor_name}CH4"),
+                self.ch4,
+                boot_time,
+            ))
+            .await?;
+        mavlink
+            .send(named_float_message(
+                &format!("{sensor_name}C2H6"),
+                self.c2h6,
+                boot_time,
+            ))
+            .await?;
 
         Ok(())
     }
@@ -161,8 +182,19 @@ impl SensorData for N2OSensorData {
         self.drone_alt = Some(location.altitude);
     }
 
-    async fn send_mavlink(&self, sensor_name: &str, boot_time: Instant, mavlink: &Sender<MavMessage>) -> Result<()> {
-        mavlink.send(named_float_message(&format!("{sensor_name}N2O"), self.n2o, boot_time)).await?;
+    async fn send_mavlink(
+        &self,
+        sensor_name: &str,
+        boot_time: Instant,
+        mavlink: &Sender<MavMessage>,
+    ) -> Result<()> {
+        mavlink
+            .send(named_float_message(
+                &format!("{sensor_name}N2O"),
+                self.n2o,
+                boot_time,
+            ))
+            .await?;
 
         Ok(())
     }
@@ -189,19 +221,21 @@ impl From<GLOBAL_POSITION_INT_DATA> for DroneLocation {
     }
 }
 
-async fn line_to_data<D: DeserializeOwned>(line: std::result::Result<String, LinesCodecError>) -> Result<Option<D>> {
-        let data = line?;
+async fn line_to_data<D: DeserializeOwned>(
+    line: std::result::Result<String, LinesCodecError>,
+) -> Result<Option<D>> {
+    let data = line?;
 
-        let mut reader = csv_async::AsyncReaderBuilder::new()
-            .has_headers(false)
-            .create_deserializer(data.as_bytes());
+    let mut reader = csv_async::AsyncReaderBuilder::new()
+        .has_headers(false)
+        .create_deserializer(data.as_bytes());
 
-        let mut dsr = reader.deserialize::<D>();
+    let mut dsr = reader.deserialize::<D>();
 
-        match dsr.next().await {
-            Some(r) => Ok(Some(r?)),
-            _ => Ok(None)
-        }
+    match dsr.next().await {
+        Some(r) => Ok(Some(r?)),
+        _ => Ok(None),
+    }
 }
 
 pub fn sensor_data_framed_reader<D: DeserializeOwned, T: AsyncRead>(
@@ -220,4 +254,3 @@ pub fn open_serial_port<D: DeserializeOwned>(
 
     Ok(data)
 }
-

@@ -7,7 +7,7 @@ use crate::{data::DroneLocation, mavlink::Telem};
 use csv_async::AsyncSerializer;
 use mavlink::common::MavMessage;
 use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use tokio::time::Instant;
 use tokio::{
     fs::File,

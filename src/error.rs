@@ -43,13 +43,13 @@ pub enum SensorError {
 }
 
 impl<T> From<tokio::sync::watch::error::SendError<T>> for SensorError {
-    fn from(value: tokio::sync::watch::error::SendError<T>) -> Self {
+    fn from(_value: tokio::sync::watch::error::SendError<T>) -> Self {
         Self::TokioChannelError
     }
 }
 
 impl<T> From<tokio::sync::mpsc::error::SendError<T>> for SensorError {
-    fn from(value: tokio::sync::mpsc::error::SendError<T>) -> Self {
+    fn from(_value: tokio::sync::mpsc::error::SendError<T>) -> Self {
         Self::TokioChannelError
     }
 }

@@ -1,16 +1,12 @@
 use chrono::{DateTime, Local};
 use clap::Parser;
-use csv_async::AsyncSerializer;
-use futures::stream::StreamExt;
-use mavlink::common::MavMessage;
-use metec_sensor::data::{open_serial_port, DroneLocation, CH4SensorData, N2OSensorData};
+
+use metec_sensor::data::CH4SensorData;
 use metec_sensor::error::*;
-use metec_sensor::mavlink::{heartbeat_stream, Telem};
-use metec_sensor::task::{handle_location, handle_sensor_data, handle_lora};
-use tokio_serial::SerialPortBuilderExt;
+use metec_sensor::mavlink::Telem;
+use metec_sensor::task::{handle_location, handle_lora, handle_sensor_data};
+
 use std::path::PathBuf;
-use std::time::Duration;
-use tokio::fs::File;
 
 /// Program for reading, storing and transmitting sensor data
 #[derive(Parser, Debug)]
@@ -66,7 +62,6 @@ struct Args {
 
     #[arg(long, env)]
     lora_radio_baud: u32,
-
 }
 
 impl Args {
@@ -88,7 +83,7 @@ async fn main() -> Result<()> {
     let args = Args::parse();
 
     log::info!("Opening Telem Serial Port");
-    let mut telem = Telem::try_new(
+    let telem = Telem::try_new(
         &args.mavlink_port,
         args.mavlink_baud,
         args.mavlink_system_id,
@@ -96,15 +91,28 @@ async fn main() -> Result<()> {
     )?;
 
     let (mavlink_task, mavlink_tx, location_rx) = handle_location(telem);
-    let (lora_task, lora_tx) = handle_lora(&args.lora_radio_port, args.lora_radio_baud, args.lora_radio_enable);
+    let (lora_task, lora_tx) = handle_lora(
+        &args.lora_radio_port,
+        args.lora_radio_baud,
+        args.lora_radio_enable,
+    );
 
     let boot_time = tokio::time::Instant::now();
-
 
     let _ = tokio::join!(
         mavlink_task,
         lora_task,
-        handle_sensor_data::<CH4SensorData>("A", &args.sensor_a_port, args.sensor_a_baud, args.sensor_a_enable, boot_time, args.get_output_file("A"), location_rx.clone(), mavlink_tx.clone(), lora_tx.clone()),
+        handle_sensor_data::<CH4SensorData>(
+            "A",
+            &args.sensor_a_port,
+            args.sensor_a_baud,
+            args.sensor_a_enable,
+            boot_time,
+            args.get_output_file("A"),
+            location_rx.clone(),
+            mavlink_tx.clone(),
+            lora_tx.clone()
+        ),
         // handle_sensor_data::<N2OSensorData>("B", &args.sensor_a_port, args.sensor_a_baud, args.sensor_a_enable, boot_time, args.get_output_file("B"), location_rx.clone(), mavlink_tx.clone(), lora_tx.clone())
     );
 
