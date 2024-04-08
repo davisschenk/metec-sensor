@@ -71,21 +71,18 @@ impl Telem {
             mavlink_version: 0x3,
         })
     }
-
-    pub async fn send_float(&mut self, name: &str, value: f32, boot_time: Instant) -> Result<()> {
-        self.send(MavMessage::NAMED_VALUE_FLOAT(
-            MavCommon::NAMED_VALUE_FLOAT_DATA {
-                time_boot_ms: boot_time.elapsed().as_millis() as u32,
-                value,
-                name: crate::util::from_string_to_u8(name),
-            },
-        ))
-        .await
-    }
 }
 
 pub fn heartbeat_stream(telem: &Telem, interval: Duration) -> impl Stream<Item = MavMessage> {
     let heartbeat_message = telem.heartbeat_message();
 
     IntervalStream::new(tokio::time::interval(interval)).map(move |_| heartbeat_message.clone())
+}
+
+pub fn named_float_message(name: &str, value: f32, boot_time: Instant) -> MavMessage {
+    MavMessage::NAMED_VALUE_FLOAT(MavCommon::NAMED_VALUE_FLOAT_DATA {
+        time_boot_ms: boot_time.elapsed().as_millis() as u32,
+        value,
+        name: crate::util::from_string_to_u8(name),
+    })
 }
