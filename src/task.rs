@@ -41,6 +41,7 @@ pub fn handle_location(
                         // Grab global position
                         MavMessage::GLOBAL_POSITION_INT(location) => {
                             let current_position = Some(DroneLocation::from(location));
+                            log::debug!("Received location: {current_position:?}");
 
                             location_tx.send(current_position)?;
                         }
@@ -76,6 +77,7 @@ pub fn handle_lora(
             unreachable!()
         }
 
+        log::debug!("Opening LORA serial port!");
         let mut serial = tokio_serial::new(port, baud).open_native_async()?;
 
         loop {
@@ -98,7 +100,9 @@ async fn csv_serialize<S: Serialize>(data: &S) -> Result<String> {
     Ok(String::from_utf8(writer.into_inner().await.unwrap())?)
 }
 
-pub async fn handle_sensor_data<S: Serialize + DeserializeOwned + SensorData + Send + Sync>(
+pub async fn handle_sensor_data<
+    S: Serialize + DeserializeOwned + SensorData + Send + Sync + std::fmt::Debug,
+>(
     sensor_name: &str,
     port: &str,
     baud: u32,
@@ -120,12 +124,16 @@ pub async fn handle_sensor_data<S: Serialize + DeserializeOwned + SensorData + S
             unreachable!()
         }
 
+        log::info!("Opening {sensor_name} port   -> {port}:{baud}");
         let mut sensor = open_serial_port::<S>(&port, baud)?;
+
+        log::info!("Opening {sensor_name} logger -> {}", filename.display());
         let mut log = AsyncSerializer::from_writer(File::create(filename).await?);
 
         loop {
             match sensor.next().await {
                 Some(Ok(Some(mut data))) => {
+                    log::info!("Received Data from Sensor: {sensor_name}: {data:?}");
                     // Grab the most up to date location
                     if let Some(location) = *location_rx.borrow() {
                         data.set_location(location);

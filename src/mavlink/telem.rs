@@ -1,10 +1,9 @@
 use std::sync::atomic::AtomicU8;
-use std::time::Duration;
 
 use crate::error::*;
 
 use futures::sink::SinkExt;
-use futures::stream::{Stream, StreamExt};
+use futures::stream::StreamExt;
 use mavlink::common as MavCommon;
 use mavlink::common::MavMessage;
 use mavlink::MavHeader;
@@ -12,7 +11,6 @@ use mavlink::MavHeader;
 use tokio::time::Instant;
 use tokio_serial::SerialPortBuilderExt;
 
-use tokio_stream::wrappers::IntervalStream;
 use tokio_util::codec::Framed;
 
 use super::MavMessageCodec;
@@ -71,12 +69,6 @@ impl Telem {
             mavlink_version: 0x3,
         })
     }
-}
-
-pub fn heartbeat_stream(telem: &Telem, interval: Duration) -> impl Stream<Item = MavMessage> {
-    let heartbeat_message = telem.heartbeat_message();
-
-    IntervalStream::new(tokio::time::interval(interval)).map(move |_| heartbeat_message.clone())
 }
 
 pub fn named_float_message(name: &str, value: f32, boot_time: Instant) -> MavMessage {

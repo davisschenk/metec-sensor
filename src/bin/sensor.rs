@@ -1,7 +1,7 @@
 use chrono::{DateTime, Local};
 use clap::Parser;
 
-use metec_sensor::data::CH4SensorData;
+use metec_sensor::data::{CH4SensorData, N2OSensorData};
 use metec_sensor::error::*;
 use metec_sensor::mavlink::Telem;
 use metec_sensor::task::{handle_location, handle_lora, handle_sensor_data};
@@ -82,7 +82,11 @@ async fn main() -> Result<()> {
 
     let args = Args::parse();
 
-    log::info!("Opening Telem Serial Port");
+    log::info!(
+        "Opening mavlink port -> {}:{}",
+        args.mavlink_port,
+        args.mavlink_baud
+    );
     let telem = Telem::try_new(
         &args.mavlink_port,
         args.mavlink_baud,
@@ -99,6 +103,7 @@ async fn main() -> Result<()> {
 
     let boot_time = tokio::time::Instant::now();
 
+    log::info!("Starting sensors");
     let _ = tokio::join!(
         mavlink_task,
         lora_task,
@@ -113,7 +118,17 @@ async fn main() -> Result<()> {
             mavlink_tx.clone(),
             lora_tx.clone()
         ),
-        // handle_sensor_data::<N2OSensorData>("B", &args.sensor_a_port, args.sensor_a_baud, args.sensor_a_enable, boot_time, args.get_output_file("B"), location_rx.clone(), mavlink_tx.clone(), lora_tx.clone())
+        handle_sensor_data::<N2OSensorData>(
+            "B",
+            &args.sensor_a_port,
+            args.sensor_a_baud,
+            args.sensor_a_enable,
+            boot_time,
+            args.get_output_file("B"),
+            location_rx.clone(),
+            mavlink_tx.clone(),
+            lora_tx.clone()
+        )
     );
 
     unreachable!()
