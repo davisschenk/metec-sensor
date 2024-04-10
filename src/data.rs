@@ -3,13 +3,13 @@ use crate::mavlink::named_float_message;
 
 use enum_dispatch::enum_dispatch;
 use futures::Stream;
-use futures_util::{Future, StreamExt};
+use futures_util::StreamExt;
 use mavlink::common::{MavMessage, GLOBAL_POSITION_INT_DATA};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use tokio::io::AsyncRead;
-use tokio::sync::mpsc::Sender;
+
 use tokio::time::Instant;
 use tokio_serial::SerialPortBuilderExt;
 use tokio_util::codec::{FramedRead, LinesCodec, LinesCodecError};
@@ -24,7 +24,7 @@ pub trait Sensor: Send {
 #[derive(Clone)]
 pub enum SensorData {
     CH4(CH4SensorData),
-    N2O(N2OSensorData)
+    N2O(N2OSensorData),
 }
 
 impl SensorData {
@@ -106,9 +106,11 @@ impl Sensor for CH4SensorData {
         self.drone_alt = Some(location.altitude);
     }
 
-    fn send_mavlink(&self, sensor_name: &str, boot_time: Instant,) -> Vec<MavMessage> {
-        vec![named_float_message(&format!("CH4"), self.ch4, boot_time),
-            named_float_message(&format!("C2H6"), self.c2h6, boot_time)]
+    fn send_mavlink(&self, _sensor_name: &str, boot_time: Instant) -> Vec<MavMessage> {
+        vec![
+            named_float_message("CH4", self.ch4, boot_time),
+            named_float_message("C2H6", self.c2h6, boot_time),
+        ]
     }
 }
 
@@ -176,8 +178,8 @@ impl Sensor for N2OSensorData {
         self.drone_alt = Some(location.altitude);
     }
 
-    fn send_mavlink(&self, sensor_name: &str, boot_time: Instant,) -> Vec<MavMessage> {
-        vec![named_float_message(&format!("N2O"), self.n2o, boot_time)]
+    fn send_mavlink(&self, _sensor_name: &str, boot_time: Instant) -> Vec<MavMessage> {
+        vec![named_float_message("N2O", self.n2o, boot_time)]
     }
 }
 

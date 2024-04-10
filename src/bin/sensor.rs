@@ -2,10 +2,10 @@ use chrono::{DateTime, Local};
 use clap::Parser;
 
 use csv_async::AsyncSerializer;
-use metec_sensor::data::{CH4SensorData, N2OSensorData, SensorData};
+use metec_sensor::data::{N2OSensorData, SensorData};
 use metec_sensor::error::*;
 use metec_sensor::mavlink::Telem;
-use metec_sensor::task::{handle_location, lora_radio, handle_sensor_data};
+use metec_sensor::task::{handle_location, handle_sensor_data, lora_radio};
 use tokio::fs::File;
 use tokio::sync::{broadcast, watch};
 use tokio::task::JoinHandle;
@@ -110,19 +110,37 @@ async fn main() -> Result<()> {
 
     if args.sensor_a_enable {
         let serializer = AsyncSerializer::from_writer(File::create("ch4").await?);
-        let sensor = tokio::spawn(handle_sensor_data::<N2OSensorData>("A", args.sensor_a_port.clone(), args.sensor_a_baud, serializer, location_rx.clone(), sensor_tx.clone()));
+        let sensor = tokio::spawn(handle_sensor_data::<N2OSensorData>(
+            "A",
+            args.sensor_a_port.clone(),
+            args.sensor_a_baud,
+            serializer,
+            location_rx.clone(),
+            sensor_tx.clone(),
+        ));
         handles.push(sensor)
     }
 
     if args.sensor_b_enable {
-        let serializer = AsyncSerializer::from_writer(File::create(args.get_output_file("n2o")).await?);
-        let sensor = tokio::spawn(handle_sensor_data::<N2OSensorData>("B", args.sensor_b_port.clone(), args.sensor_b_baud, serializer, location_rx.clone(), sensor_tx.clone()));
+        let serializer =
+            AsyncSerializer::from_writer(File::create(args.get_output_file("n2o")).await?);
+        let sensor = tokio::spawn(handle_sensor_data::<N2OSensorData>(
+            "B",
+            args.sensor_b_port.clone(),
+            args.sensor_b_baud,
+            serializer,
+            location_rx.clone(),
+            sensor_tx.clone(),
+        ));
         handles.push(sensor)
     }
 
-
     if args.lora_radio_enable {
-        let lora = tokio::spawn(lora_radio(args.lora_radio_port.to_owned(), args.lora_radio_baud, sensor_tx.subscribe()));
+        let lora = tokio::spawn(lora_radio(
+            args.lora_radio_port.to_owned(),
+            args.lora_radio_baud,
+            sensor_tx.subscribe(),
+        ));
         handles.push(lora)
     };
 

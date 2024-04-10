@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::time::Duration;
 
 use crate::data::{open_serial_port, Sensor, SensorData};
@@ -9,18 +8,16 @@ use mavlink::common::MavMessage;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use tokio::sync::broadcast;
-use tokio::time::Instant;
-use tokio::{
-    fs::File,
-    io::AsyncWriteExt,
-    sync::{mpsc, watch},
-    task::JoinHandle,
-};
+
+use tokio::{fs::File, io::AsyncWriteExt, sync::watch};
 use tokio_serial::SerialPortBuilderExt;
 use tokio_stream::wrappers::IntervalStream;
 use tokio_stream::StreamExt;
 
-pub async fn handle_location(telem: Telem, location_tx: watch::Sender<Option<DroneLocation>>, sensor_rx: broadcast::Receiver<SensorData>
+pub async fn handle_location(
+    telem: Telem,
+    location_tx: watch::Sender<Option<DroneLocation>>,
+    sensor_rx: broadcast::Receiver<SensorData>,
 ) -> Result<()> {
     let mut sensor_rx = sensor_rx;
     let mut telem = telem;
@@ -122,8 +119,11 @@ pub async fn handle_sensor_data<
     baud: u32,
     serializer: AsyncSerializer<File>,
     location_rx: watch::Receiver<Option<DroneLocation>>,
-    sensor_tx: broadcast::Sender<SensorData>
-) -> Result<()> where SensorData: From<S> {
+    sensor_tx: broadcast::Sender<SensorData>,
+) -> Result<()>
+where
+    SensorData: From<S>,
+{
     let mut serializer = serializer;
     let sensor_name = sensor_name.to_owned();
     let port = port.to_owned();
