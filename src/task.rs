@@ -1,13 +1,14 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use crate::data::{open_serial_port, SensorData};
+use crate::data::{open_serial_port, Sensor, SensorData};
 use crate::error::*;
 use crate::{data::DroneLocation, mavlink::Telem};
 use csv_async::AsyncSerializer;
 use mavlink::common::MavMessage;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
+use tokio::sync::broadcast;
 use tokio::time::Instant;
 use tokio::{
     fs::File,
@@ -19,75 +20,63 @@ use tokio_serial::SerialPortBuilderExt;
 use tokio_stream::wrappers::IntervalStream;
 use tokio_stream::StreamExt;
 
-pub fn handle_location(
-    telem: Telem,
-) -> (
-    tokio::task::JoinHandle<Result<()>>,
-    mpsc::Sender<MavMessage>,
-    watch::Receiver<Option<DroneLocation>>,
-) {
-    let (mavlink_tx, mut mavlink_rx) = mpsc::channel(32);
-    let (location_tx, location_rx) = watch::channel(None);
+pub async fn handle_location(telem: Telem, location_tx: watch::Sender<Option<DroneLocation>>, sensor_rx: broadcast::Receiver<SensorData>
+) -> Result<()> {
+    let mut sensor_rx = sensor_rx;
+    let mut telem = telem;
+
     let heartbeat_message = telem.heartbeat_message();
     let mut heartbeat_stream = IntervalStream::new(tokio::time::interval(Duration::from_secs(1)))
         .map(move |_| heartbeat_message.clone());
-    let mut telem = telem;
 
-    let task = tokio::spawn(async move {
-        loop {
-            tokio::select! {
-                Some(Ok((_header, message))) = telem.recv() => {
-                    match message {
-                        // Grab global position
-                        MavMessage::GLOBAL_POSITION_INT(location) => {
-                            let current_position = Some(DroneLocation::from(location));
-                            log::debug!("Received location: {current_position:?}");
+    let boot_time = tokio::time::Instant::now();
 
-                            location_tx.send(current_position)?;
-                        }
-                        msg => log::trace!("Mavlink Received: {msg:?}"),
+    loop {
+        tokio::select! {
+            Some(Ok((_header, message))) = telem.recv() => {
+                match message {
+                    // Grab global position
+                    MavMessage::GLOBAL_POSITION_INT(location) => {
+                        let current_position = Some(DroneLocation::from(location));
+                        log::debug!("Received location: {current_position:?}");
+
+                        location_tx.send(current_position)?;
                     }
-                },
-                Some(message) = mavlink_rx.recv() => {
-                    telem.send(message).await?;
-                },
-                Some(heartbeat) = heartbeat_stream.next() => {
-                    telem.send(heartbeat).await?;
+                    msg => log::trace!("Mavlink Received: {msg:?}"),
+                }
+            },
+            Some(heartbeat) = heartbeat_stream.next() => {
+                telem.send(heartbeat).await?;
+            },
+            Ok(data) = sensor_rx.recv() => {
+                let messages = data.send_mavlink(data.sensor_name(), boot_time);
+                for m in messages {
+                    telem.send(m).await?;
                 }
             }
-        }
-    });
 
-    (task, mavlink_tx, location_rx)
+        }
+    }
 }
 
-pub fn handle_lora(
-    port: &str,
+pub async fn lora_radio(
+    port: String,
     baud: u32,
-    enabled: bool,
-) -> (JoinHandle<Result<()>>, mpsc::Sender<String>) {
-    let (lora_tx, mut lora_rx) = mpsc::channel::<String>(32);
-    let port = port.to_owned();
+    sensor_data: broadcast::Receiver<SensorData>,
+) -> Result<()> {
+    log::debug!("Opening LORA serial port!");
+    let mut serial = tokio_serial::new(port, baud).open_native_async()?;
+    let mut sensor_data = sensor_data;
 
-    let task = tokio::spawn(async move {
-        if !enabled {
-            lora_rx.close();
-            let future = futures::future::pending();
-            let () = future.await;
-            unreachable!()
-        }
+    loop {
+        let data = sensor_data.recv().await?;
+        let lora_str = match data {
+            SensorData::CH4(d) => format!("A,{}", csv_serialize(&d).await?),
+            SensorData::N2O(d) => format!("B,{}", csv_serialize(&d).await?),
+        };
 
-        log::debug!("Opening LORA serial port!");
-        let mut serial = tokio_serial::new(port, baud).open_native_async()?;
-
-        loop {
-            while let Some(data) = lora_rx.recv().await {
-                serial.write_all(data.as_bytes()).await?;
-            }
-        }
-    });
-
-    (task, lora_tx)
+        serial.write_all(lora_str.as_bytes()).await?;
+    }
 }
 
 async fn csv_serialize<S: Serialize>(data: &S) -> Result<String> {
@@ -100,59 +89,61 @@ async fn csv_serialize<S: Serialize>(data: &S) -> Result<String> {
     Ok(String::from_utf8(writer.into_inner().await.unwrap())?)
 }
 
-pub async fn handle_sensor_data<
-    S: Serialize + DeserializeOwned + SensorData + Send + Sync + std::fmt::Debug,
->(
-    sensor_name: &str,
-    port: &str,
-    baud: u32,
-    enabled: bool,
-    boot_time: Instant,
-    filename: PathBuf,
-    location_rx: watch::Receiver<Option<DroneLocation>>,
-    mavlink_tx: mpsc::Sender<MavMessage>,
-    lora_tx: mpsc::Sender<String>,
-) -> JoinHandle<Result<()>> {
-    let sensor_name = sensor_name.to_owned();
-    let port = port.to_owned();
-    let filename = filename.to_owned();
+pub async fn file_writer(
+    sensor_a: &mut Option<AsyncSerializer<File>>,
+    sensor_b: &mut Option<AsyncSerializer<File>>,
+    sensor_data: broadcast::Receiver<SensorData>,
+) -> Result<()> {
+    let mut sensor_data = sensor_data;
 
-    tokio::spawn(async move {
-        if !enabled {
-            let future = futures::future::pending();
-            let () = future.await;
-            unreachable!()
-        }
+    loop {
+        let data = sensor_data.recv().await?;
 
-        log::info!("Opening {sensor_name} port   -> {port}:{baud}");
-        let mut sensor = open_serial_port::<S>(&port, baud)?;
-
-        log::info!("Opening {sensor_name} logger -> {}", filename.display());
-        let mut log = AsyncSerializer::from_writer(File::create(filename).await?);
-
-        loop {
-            match sensor.next().await {
-                Some(Ok(Some(mut data))) => {
-                    log::info!("Received Data from Sensor: {sensor_name}: {data:?}");
-                    // Grab the most up to date location
-                    if let Some(location) = *location_rx.borrow() {
-                        data.set_location(location);
-                    }
-
-                    // Send data to LORA
-                    if !lora_tx.is_closed() {
-                        let lora_data = format!("{sensor_name},{}", csv_serialize(&data).await?);
-                        let _ = lora_tx.send(lora_data).await;
-                    }
-
-                    // Send data over mavlink
-                    data.send_mavlink(&sensor_name, boot_time, &mavlink_tx)
-                        .await?;
-                    log.serialize(data).await?;
+        match data {
+            SensorData::CH4(d) => {
+                if let Some(ref mut writer) = sensor_a {
+                    writer.serialize(d).await?;
                 }
-                Some(Err(e)) => log::error!("Error while reading sensor {}: {}", sensor_name, e),
-                _ => (),
+            }
+            SensorData::N2O(d) => {
+                if let Some(ref mut writer) = sensor_b {
+                    writer.serialize(d).await?;
+                }
             }
         }
-    })
+    }
+}
+
+pub async fn handle_sensor_data<
+    S: Serialize + DeserializeOwned + Sensor + Send + Sync + std::fmt::Debug,
+>(
+    sensor_name: &str,
+    port: String,
+    baud: u32,
+    serializer: AsyncSerializer<File>,
+    location_rx: watch::Receiver<Option<DroneLocation>>,
+    sensor_tx: broadcast::Sender<SensorData>
+) -> Result<()> where SensorData: From<S> {
+    let mut serializer = serializer;
+    let sensor_name = sensor_name.to_owned();
+    let port = port.to_owned();
+
+    log::info!("Opening {sensor_name} port   -> {port}:{baud}");
+    let mut sensor = open_serial_port::<S>(&port, baud)?;
+
+    loop {
+        match sensor.next().await {
+            Some(Ok(Some(mut data))) => {
+                log::info!("Received Data from Sensor: {sensor_name}: {data:?}");
+                if let Some(location) = *location_rx.borrow() {
+                    data.set_location(location);
+                }
+
+                serializer.serialize(&data).await?;
+                sensor_tx.send(SensorData::from(data))?;
+            }
+            Some(Err(e)) => log::error!("Error while reading sensor {}: {}", sensor_name, e),
+            _ => (),
+        }
+    }
 }

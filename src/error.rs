@@ -35,6 +35,9 @@ pub enum SensorError {
     #[error("tokio channel")]
     TokioChannelError,
 
+    #[error("tokio broadcast error")]
+    TokioBroadcastRecv(#[from] tokio::sync::broadcast::error::RecvError),
+
     #[error("from utf8 erro")]
     Utf8Error(#[from] FromUtf8Error),
 
@@ -50,6 +53,12 @@ impl<T> From<tokio::sync::watch::error::SendError<T>> for SensorError {
 
 impl<T> From<tokio::sync::mpsc::error::SendError<T>> for SensorError {
     fn from(_value: tokio::sync::mpsc::error::SendError<T>) -> Self {
+        Self::TokioChannelError
+    }
+}
+
+impl<T> From<tokio::sync::broadcast::error::SendError<T>> for SensorError {
+    fn from(_value: tokio::sync::broadcast::error::SendError<T>) -> Self {
         Self::TokioChannelError
     }
 }

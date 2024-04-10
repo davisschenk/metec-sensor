@@ -1,6 +1,7 @@
 use crate::error::*;
 use crate::mavlink::named_float_message;
 
+use enum_dispatch::enum_dispatch;
 use futures::Stream;
 use futures_util::{Future, StreamExt};
 use mavlink::common::{MavMessage, GLOBAL_POSITION_INT_DATA};
@@ -13,17 +14,29 @@ use tokio::time::Instant;
 use tokio_serial::SerialPortBuilderExt;
 use tokio_util::codec::{FramedRead, LinesCodec, LinesCodecError};
 
-pub trait SensorData: Send {
+#[enum_dispatch]
+pub trait Sensor: Send {
     fn set_location(&mut self, location: DroneLocation);
-    fn send_mavlink(
-        &self,
-        sensor_name: &str,
-        boot_time: Instant,
-        mavlink: &Sender<MavMessage>,
-    ) -> impl Future<Output = Result<()>> + Send;
+    fn send_mavlink(&self, sensor_name: &str, boot_time: Instant) -> Vec<MavMessage>;
 }
 
-#[derive(Serialize, Deserialize, Default, Debug)]
+#[enum_dispatch(Sensor)]
+#[derive(Clone)]
+pub enum SensorData {
+    CH4(CH4SensorData),
+    N2O(N2OSensorData)
+}
+
+impl SensorData {
+    pub fn sensor_name(&self) -> &str {
+        match self {
+            SensorData::CH4(_) => "A",
+            SensorData::N2O(_) => "B",
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Default, Debug, Clone)]
 pub struct CH4SensorData {
     #[serde(rename = "Time Stamp")]
     pub time_stamp: String,
@@ -86,39 +99,20 @@ pub struct CH4SensorData {
     pub drone_alt: Option<f64>,
 }
 
-impl SensorData for CH4SensorData {
+impl Sensor for CH4SensorData {
     fn set_location(&mut self, location: DroneLocation) {
         self.drone_lat = Some(location.latitude);
         self.drone_lon = Some(location.longitude);
         self.drone_alt = Some(location.altitude);
     }
 
-    async fn send_mavlink(
-        &self,
-        sensor_name: &str,
-        boot_time: Instant,
-        mavlink: &Sender<MavMessage>,
-    ) -> Result<()> {
-        mavlink
-            .send(named_float_message(
-                &format!("{sensor_name}CH4"),
-                self.ch4,
-                boot_time,
-            ))
-            .await?;
-        mavlink
-            .send(named_float_message(
-                &format!("{sensor_name}C2H6"),
-                self.c2h6,
-                boot_time,
-            ))
-            .await?;
-
-        Ok(())
+    fn send_mavlink(&self, sensor_name: &str, boot_time: Instant,) -> Vec<MavMessage> {
+        vec![named_float_message(&format!("CH4"), self.ch4, boot_time),
+            named_float_message(&format!("C2H6"), self.c2h6, boot_time)]
     }
 }
 
-#[derive(Serialize, Deserialize, Default, Debug)]
+#[derive(Serialize, Deserialize, Default, Debug, Clone)]
 pub struct N2OSensorData {
     #[serde(rename = "Time Stamp")]
     pub time_stamp: String,
@@ -175,28 +169,15 @@ pub struct N2OSensorData {
     pub drone_alt: Option<f64>,
 }
 
-impl SensorData for N2OSensorData {
+impl Sensor for N2OSensorData {
     fn set_location(&mut self, location: DroneLocation) {
         self.drone_lat = Some(location.latitude);
         self.drone_lon = Some(location.longitude);
         self.drone_alt = Some(location.altitude);
     }
 
-    async fn send_mavlink(
-        &self,
-        sensor_name: &str,
-        boot_time: Instant,
-        mavlink: &Sender<MavMessage>,
-    ) -> Result<()> {
-        mavlink
-            .send(named_float_message(
-                &format!("{sensor_name}N2O"),
-                self.n2o,
-                boot_time,
-            ))
-            .await?;
-
-        Ok(())
+    fn send_mavlink(&self, sensor_name: &str, boot_time: Instant,) -> Vec<MavMessage> {
+        vec![named_float_message(&format!("N2O"), self.n2o, boot_time)]
     }
 }
 

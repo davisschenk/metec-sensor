@@ -1,10 +1,14 @@
 use chrono::{DateTime, Local};
 use clap::Parser;
 
-use metec_sensor::data::{CH4SensorData, N2OSensorData};
+use csv_async::AsyncSerializer;
+use metec_sensor::data::{CH4SensorData, N2OSensorData, SensorData};
 use metec_sensor::error::*;
 use metec_sensor::mavlink::Telem;
-use metec_sensor::task::{handle_location, handle_lora, handle_sensor_data};
+use metec_sensor::task::{handle_location, lora_radio, handle_sensor_data};
+use tokio::fs::File;
+use tokio::sync::{broadcast, watch};
+use tokio::task::JoinHandle;
 
 use std::path::PathBuf;
 
@@ -94,42 +98,35 @@ async fn main() -> Result<()> {
         args.mavlink_component_id,
     )?;
 
-    let (mavlink_task, mavlink_tx, location_rx) = handle_location(telem);
-    let (lora_task, lora_tx) = handle_lora(
-        &args.lora_radio_port,
-        args.lora_radio_baud,
-        args.lora_radio_enable,
-    );
+    log::info!("Creating output directory at {:?}", args.output_directory);
+    tokio::fs::create_dir_all(&args.output_directory).await?;
 
-    let boot_time = tokio::time::Instant::now();
+    let (sensor_tx, sensor_rx) = broadcast::channel::<SensorData>(16);
+    let (location_tx, location_rx) = watch::channel(None);
+    let mut handles: Vec<JoinHandle<Result<()>>> = vec![];
 
-    log::info!("Starting sensors");
-    let _ = tokio::join!(
-        mavlink_task,
-        lora_task,
-        handle_sensor_data::<CH4SensorData>(
-            "A",
-            &args.sensor_a_port,
-            args.sensor_a_baud,
-            args.sensor_a_enable,
-            boot_time,
-            args.get_output_file("A"),
-            location_rx.clone(),
-            mavlink_tx.clone(),
-            lora_tx.clone()
-        ),
-        handle_sensor_data::<N2OSensorData>(
-            "B",
-            &args.sensor_a_port,
-            args.sensor_a_baud,
-            args.sensor_a_enable,
-            boot_time,
-            args.get_output_file("B"),
-            location_rx.clone(),
-            mavlink_tx.clone(),
-            lora_tx.clone()
-        )
-    );
+    let mavlink = tokio::spawn(handle_location(telem, location_tx, sensor_rx));
+    handles.push(mavlink);
 
-    unreachable!()
+    if args.sensor_a_enable {
+        let serializer = AsyncSerializer::from_writer(File::create("ch4").await?);
+        let sensor = tokio::spawn(handle_sensor_data::<N2OSensorData>("A", args.sensor_a_port.clone(), args.sensor_a_baud, serializer, location_rx.clone(), sensor_tx.clone()));
+        handles.push(sensor)
+    }
+
+    if args.sensor_b_enable {
+        let serializer = AsyncSerializer::from_writer(File::create(args.get_output_file("n2o")).await?);
+        let sensor = tokio::spawn(handle_sensor_data::<N2OSensorData>("B", args.sensor_b_port.clone(), args.sensor_b_baud, serializer, location_rx.clone(), sensor_tx.clone()));
+        handles.push(sensor)
+    }
+
+
+    if args.lora_radio_enable {
+        let lora = tokio::spawn(lora_radio(args.lora_radio_port.to_owned(), args.lora_radio_baud, sensor_tx.subscribe()));
+        handles.push(lora)
+    };
+
+    futures_util::future::try_join_all(handles).await?;
+
+    Ok(())
 }
