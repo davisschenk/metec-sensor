@@ -2,7 +2,7 @@ use chrono::{DateTime, Local};
 use clap::Parser;
 
 use csv_async::AsyncSerializer;
-use metec_sensor::data::{N2OSensorData, SensorData};
+use metec_sensor::data::{N2OSensorData, SensorData, CH4SensorData};
 use metec_sensor::error::*;
 use metec_sensor::mavlink::Telem;
 use metec_sensor::task::{handle_location, handle_sensor_data, lora_radio};
@@ -109,8 +109,9 @@ async fn main() -> Result<()> {
     handles.push(mavlink);
 
     if args.sensor_a_enable {
-        let serializer = AsyncSerializer::from_writer(File::create("ch4").await?);
-        let sensor = tokio::spawn(handle_sensor_data::<N2OSensorData>(
+        let output_file = File::create(args.get_output_file("ch4")).await?;
+        let serializer = AsyncSerializer::from_writer(output_file);
+        let sensor = tokio::spawn(handle_sensor_data::<CH4SensorData>(
             "A",
             args.sensor_a_port.clone(),
             args.sensor_a_baud,
@@ -122,8 +123,8 @@ async fn main() -> Result<()> {
     }
 
     if args.sensor_b_enable {
-        let serializer =
-            AsyncSerializer::from_writer(File::create(args.get_output_file("n2o")).await?);
+        let output_file = File::create(args.get_output_file("n2o")).await?;
+        let serializer = AsyncSerializer::from_writer(output_file);
         let sensor = tokio::spawn(handle_sensor_data::<N2OSensorData>(
             "B",
             args.sensor_b_port.clone(),

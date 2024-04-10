@@ -68,8 +68,8 @@ pub async fn lora_radio(
     loop {
         let data = sensor_data.recv().await?;
         let lora_str = match data {
-            SensorData::CH4(d) => format!("A,{}", csv_serialize(&d).await?),
-            SensorData::N2O(d) => format!("B,{}", csv_serialize(&d).await?),
+            SensorData::CH4(ref d) => format!("{},{}", data.sensor_name(), csv_serialize(&d).await?),
+            SensorData::N2O(ref d) => format!("{},{}", data.sensor_name(), csv_serialize(&d).await?),
         };
 
         serial.write_all(lora_str.as_bytes()).await?;
@@ -84,31 +84,6 @@ async fn csv_serialize<S: Serialize>(data: &S) -> Result<String> {
     writer.serialize(data).await?;
 
     Ok(String::from_utf8(writer.into_inner().await.unwrap())?)
-}
-
-pub async fn file_writer(
-    sensor_a: &mut Option<AsyncSerializer<File>>,
-    sensor_b: &mut Option<AsyncSerializer<File>>,
-    sensor_data: broadcast::Receiver<SensorData>,
-) -> Result<()> {
-    let mut sensor_data = sensor_data;
-
-    loop {
-        let data = sensor_data.recv().await?;
-
-        match data {
-            SensorData::CH4(d) => {
-                if let Some(ref mut writer) = sensor_a {
-                    writer.serialize(d).await?;
-                }
-            }
-            SensorData::N2O(d) => {
-                if let Some(ref mut writer) = sensor_b {
-                    writer.serialize(d).await?;
-                }
-            }
-        }
-    }
 }
 
 pub async fn handle_sensor_data<
