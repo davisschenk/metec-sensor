@@ -119,7 +119,7 @@ where
                 serializer.serialize(&data).await?;
                 sensor_tx.send(SensorData::from(data))?;
             }
-            Some(Err(e)) => log::error!("Error while reading sensor {}: {}", sensor_name, e),
+            Some(Err(e)) => log::error!("Error while reading sensor {}: {:?}", sensor_name, e),
             _ => (),
         }
     }
