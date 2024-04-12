@@ -69,8 +69,12 @@ pub async fn lora_radio(
     loop {
         let data = sensor_data.recv().await?;
         let lora_str = match data {
-            SensorData::CH4(ref d) => format!("{},{}", data.sensor_name(), csv_serialize(&d).await?),
-            SensorData::N2O(ref d) => format!("{},{}", data.sensor_name(), csv_serialize(&d).await?),
+            SensorData::CH4(ref d) => {
+                format!("{},{}", data.sensor_name(), csv_serialize(&d).await?)
+            }
+            SensorData::N2O(ref d) => {
+                format!("{},{}", data.sensor_name(), csv_serialize(&d).await?)
+            }
         };
 
         serial.write_all(lora_str.as_bytes()).await?;

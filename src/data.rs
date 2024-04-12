@@ -6,8 +6,8 @@ use futures::Stream;
 use futures_util::StreamExt;
 use mavlink::common::{MavMessage, GLOBAL_POSITION_INT_DATA};
 use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
 use serde::de::Deserializer;
+use serde::{Deserialize, Serialize};
 use tokio::io::AsyncRead;
 
 use tokio::time::Instant;
@@ -238,7 +238,6 @@ pub fn open_serial_port<D: DeserializeOwned>(
     Ok(data)
 }
 
-
 // custom deserializer function
 fn deserialize_no_data<'de, D, T: Deserialize<'de>>(
     deserializer: D,
@@ -246,26 +245,16 @@ fn deserialize_no_data<'de, D, T: Deserialize<'de>>(
 where
     D: Deserializer<'de>,
 {
-    // we define a local enum type inside of the function
-    // because it is untagged, serde will deserialize as the first variant
-    // that it can
     #[derive(Deserialize)]
     #[serde(untagged)]
     enum MaybeNA<U> {
-        // if it can be parsed as Option<T>, it will be
         Value(Option<U>),
-        // otherwise try parsing as a string
         NAString(String),
     }
 
-    // deserialize into local enum
     let value: MaybeNA<T> = Deserialize::deserialize(deserializer)?;
     match value {
-        // if parsed as T or None, return that
         MaybeNA::Value(value) => Ok(value),
-
-        // otherwise, if value is string an "n/a", return None
-        // (and fail if it is any other string)
         MaybeNA::NAString(string) => {
             if string == "No Data" {
                 Ok(None)

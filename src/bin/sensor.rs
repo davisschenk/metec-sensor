@@ -2,7 +2,7 @@ use chrono::{DateTime, Local};
 use clap::Parser;
 
 use csv_async::AsyncSerializer;
-use metec_sensor::data::{N2OSensorData, SensorData, CH4SensorData};
+use metec_sensor::data::{CH4SensorData, N2OSensorData, SensorData};
 use metec_sensor::error::*;
 use metec_sensor::mavlink::Telem;
 use metec_sensor::task::{handle_location, handle_sensor_data, lora_radio};
