@@ -1,7 +1,7 @@
 # HOST=metec-pi.local
 # USER=metec
 
-HOST=10.85.174.20
+HOST=10.85.179.92
 USER=metec
 
 # HOST=raspberrypi.local

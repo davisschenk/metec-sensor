@@ -36,7 +36,7 @@ pub async fn handle_location(
                     // Grab global position
                     MavMessage::GLOBAL_POSITION_INT(location) => {
                         let current_position = Some(DroneLocation::from(location));
-                        log::debug!("Received location: {current_position:?}");
+                        log::trace!("Received location: {current_position:?}");
 
                         location_tx.send(current_position)?;
                     }
@@ -68,28 +68,13 @@ pub async fn lora_radio(
 
     loop {
         let data = sensor_data.recv().await?;
-        let lora_str = match data {
-            SensorData::CH4(ref d) => {
-                format!("{},{}", data.sensor_name(), csv_serialize(&d).await?)
-            }
-            SensorData::N2O(ref d) => {
-                format!("{},{}", data.sensor_name(), csv_serialize(&d).await?)
-            }
-        };
+        let lora_str = format!("{},{}\n", data.sensor_name(), data.lora_fields().join(","));
+
+        log::trace!("Sending LORA data: {lora_str}");
 
         serial.write_all(lora_str.as_bytes()).await?;
-        sleep(Duration::from_millis(10)).await;
+        sleep(Duration::from_millis(200)).await;
     }
-}
-
-async fn csv_serialize<S: Serialize>(data: &S) -> Result<String> {
-    let mut writer = csv_async::AsyncWriterBuilder::new()
-        .has_headers(false)
-        .create_serializer(vec![]);
-
-    writer.serialize(data).await?;
-
-    Ok(String::from_utf8(writer.into_inner().await.unwrap())?)
 }
 
 pub async fn handle_sensor_data<
@@ -115,10 +100,11 @@ where
     loop {
         match sensor.next().await {
             Some(Ok(Some(mut data))) => {
-                log::info!("Received Data from Sensor: {sensor_name}: {data:?}");
                 if let Some(location) = *location_rx.borrow() {
                     data.set_location(location);
                 }
+
+                log::info!("Received Data from Sensor: {sensor_name}: {data:?}");
 
                 serializer.serialize(&data).await?;
                 sensor_tx.send(SensorData::from(data))?;

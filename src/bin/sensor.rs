@@ -8,6 +8,7 @@ use metec_sensor::mavlink::Telem;
 use metec_sensor::task::{handle_location, handle_sensor_data, lora_radio};
 use tokio::fs::File;
 use tokio::sync::{broadcast, watch};
+use tokio::task::JoinSet;
 
 use std::path::PathBuf;
 
@@ -84,6 +85,7 @@ async fn main() -> Result<()> {
     pretty_env_logger::init();
 
     let args = Args::parse();
+    let mut tasks = JoinSet::new();
 
     log::info!(
         "Opening mavlink port -> {}:{}",
@@ -102,49 +104,54 @@ async fn main() -> Result<()> {
 
     let (sensor_tx, sensor_rx) = broadcast::channel::<SensorData>(16);
     let (location_tx, location_rx) = watch::channel(None);
-    let mut handles = vec![];
 
-    let mavlink = tokio::spawn(handle_location(telem, location_tx, sensor_rx));
-    handles.push(mavlink);
+    let mavlink = handle_location(telem, location_tx, sensor_rx);
+    tasks.spawn(mavlink);
 
     if args.sensor_a_enable {
         let output_file = File::create(args.get_output_file("ch4")).await?;
         let serializer = AsyncSerializer::from_writer(output_file);
-        let sensor = tokio::spawn(handle_sensor_data::<CH4SensorData>(
+        let sensor = handle_sensor_data::<CH4SensorData>(
             "A",
             args.sensor_a_port.clone(),
             args.sensor_a_baud,
             serializer,
             location_rx.clone(),
             sensor_tx.clone(),
-        ));
-        handles.push(sensor)
+        );
+
+        tasks.spawn(sensor);
     }
 
     if args.sensor_b_enable {
         let output_file = File::create(args.get_output_file("n2o")).await?;
         let serializer = AsyncSerializer::from_writer(output_file);
-        let sensor = tokio::spawn(handle_sensor_data::<N2OSensorData>(
+        let sensor = handle_sensor_data::<N2OSensorData>(
             "B",
             args.sensor_b_port.clone(),
             args.sensor_b_baud,
             serializer,
             location_rx.clone(),
             sensor_tx.clone(),
-        ));
-        handles.push(sensor)
+        );
+
+        tasks.spawn(sensor);
     }
 
     if args.lora_radio_enable {
-        let lora = tokio::spawn(lora_radio(
+        let lora = lora_radio(
             args.lora_radio_port.to_owned(),
             args.lora_radio_baud,
             sensor_tx.subscribe(),
-        ));
-        handles.push(lora)
+        );
+
+        tasks.spawn(lora);
     };
 
-    futures_util::future::try_join_all(handles).await?;
+    while let Some(r) = tasks.join_next().await {
+        let _ = r??;
+        log::error!("TASK EXITED");
+    }
 
     Ok(())
 }

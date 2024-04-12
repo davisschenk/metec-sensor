@@ -18,6 +18,7 @@ use tokio_util::codec::{FramedRead, LinesCodec, LinesCodecError};
 pub trait Sensor: Send {
     fn set_location(&mut self, location: DroneLocation);
     fn send_mavlink(&self, sensor_name: &str, boot_time: Instant) -> Vec<MavMessage>;
+    fn lora_fields(&self) -> Vec<String>;
 }
 
 #[enum_dispatch(Sensor)]
@@ -112,6 +113,21 @@ impl Sensor for CH4SensorData {
             named_float_message("C2H6", self.c2h6, boot_time),
         ]
     }
+
+    fn lora_fields(&self) -> Vec<String> {
+        let alt = match self.drone_alt {
+            Some(x) => x.to_string(),
+            None => "".to_string(),
+        };
+
+        vec![
+            self.time_stamp.to_owned(),
+            self.p.to_string(),
+            self.ch4.to_string(),
+            self.c2h6.to_string(),
+            alt,
+        ]
+    }
 }
 
 #[derive(Serialize, Deserialize, Default, Debug, Clone)]
@@ -179,7 +195,25 @@ impl Sensor for N2OSensorData {
     }
 
     fn send_mavlink(&self, _sensor_name: &str, boot_time: Instant) -> Vec<MavMessage> {
-        vec![named_float_message("N2O", self.n2o, boot_time)]
+        vec![
+            named_float_message("N2O", self.n2o, boot_time),
+            named_float_message("CO2", self.co2, boot_time),
+        ]
+    }
+
+    fn lora_fields(&self) -> Vec<String> {
+        let alt = match self.drone_alt {
+            Some(x) => x.to_string(),
+            None => "".to_string(),
+        };
+
+        vec![
+            self.time_stamp.to_owned(),
+            self.p.to_string(),
+            self.n2o.to_string(),
+            self.co2.to_string(),
+            alt,
+        ]
     }
 }
 
@@ -259,7 +293,9 @@ where
             if string == "No Data" {
                 Ok(None)
             } else {
-                Err(serde::de::Error::custom(format!("Expected `No Data` got `{string}`")))
+                Err(serde::de::Error::custom(format!(
+                    "Expected `No Data` got `{string}`"
+                )))
             }
         }
     }
