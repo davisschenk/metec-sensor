@@ -9,6 +9,7 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use tokio::sync::broadcast;
 
+use tokio::time::sleep;
 use tokio::{fs::File, io::AsyncWriteExt, sync::watch};
 use tokio_serial::SerialPortBuilderExt;
 use tokio_stream::wrappers::IntervalStream;
@@ -73,6 +74,7 @@ pub async fn lora_radio(
         };
 
         serial.write_all(lora_str.as_bytes()).await?;
+        sleep(Duration::from_millis(10)).await;
     }
 }
 
