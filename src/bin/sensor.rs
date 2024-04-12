@@ -8,7 +8,6 @@ use metec_sensor::mavlink::Telem;
 use metec_sensor::task::{handle_location, handle_sensor_data, lora_radio};
 use tokio::fs::File;
 use tokio::sync::{broadcast, watch};
-use tokio::task::JoinHandle;
 
 use std::path::PathBuf;
 
@@ -103,7 +102,7 @@ async fn main() -> Result<()> {
 
     let (sensor_tx, sensor_rx) = broadcast::channel::<SensorData>(16);
     let (location_tx, location_rx) = watch::channel(None);
-    let mut handles: Vec<JoinHandle<Result<()>>> = vec![];
+    let mut handles = vec![];
 
     let mavlink = tokio::spawn(handle_location(telem, location_tx, sensor_rx));
     handles.push(mavlink);

@@ -259,7 +259,7 @@ where
             if string == "No Data" {
                 Ok(None)
             } else {
-                Err(serde::de::Error::custom("Unexpected string"))
+                Err(serde::de::Error::custom(format!("Expected `No Data` got `{string}`")))
             }
         }
     }
